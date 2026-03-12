@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 380px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      color: #1a1a2e;
+      background: #f8f9fa;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      padding: 20px;
+      color: white;
+    }
+    .header-brand {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      opacity: 0.7;
+      margin-bottom: 6px;
+    }
+    .header-title {
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-icon {
+      width: 28px;
+      height: 28px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .header-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: white;
+    }
+    
+    .content {
+      padding: 16px;
+    }
+    
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      border: 1px solid #eee;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .card-header-right {
+      margin-left: auto;
+    }
+    .card-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+    .card-icon.blue { background: #e3f2fd; }
+    .card-icon.blue svg { fill: #1976d2; }
+    .card-icon.orange { background: #fff3e0; }
+    .card-icon.orange svg { fill: #f57c00; }
+    .card-icon.green { background: #e8f5e9; }
+    .card-icon.green svg { fill: #388e3c; }
+    .card-icon.purple { background: #f3e5f5; }
+    .card-icon.purple svg { fill: #7b1fa2; }
+    
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+    }
+    .card-subtitle {
+      font-size: 11px;
+      color: #888;
+    }
+    
+    .settings-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .settings-row:last-child {
+      margin-bottom: 0;
+    }
+    .settings-label {
+      font-size: 13px;
+      color: #555;
+      min-width: 80px;
+    }
+    .settings-input {
+      width: 80px;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      text-align: center;
+      transition: all 0.2s;
+    }
+    .settings-input:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 3px rgba(25,118,210,0.1);
+    }
+    .settings-unit {
+      font-size: 12px;
+      color: #888;
+    }
+    
+    .toggle-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .toggle-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .toggle {
+      position: relative;
+      width: 52px;
+      height: 28px;
+      flex-shrink: 0;
+    }
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #ddd;
+      transition: 0.3s;
+      border-radius: 28px;
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      transition: 0.3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .toggle input:checked + .toggle-slider {
+      background: linear-gradient(135deg, #43a047, #66bb6a);
+    }
+    .toggle input:checked + .toggle-slider:before {
+      transform: translateX(24px);
+    }
+    
+    .status-bar {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-bar.active {
+      background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+      color: #2e7d32;
+    }
+    .status-bar.active .status-dot {
+      background: #4caf50;
+      box-shadow: 0 0 8px rgba(76,175,80,0.6);
+      animation: pulse 2s infinite;
+    }
+    .status-bar.paused {
+      background: linear-gradient(135deg, #fff3e0, #fff8e1);
+      color: #f57c00;
+    }
+    .status-bar.paused .status-dot {
+      background: #ff9800;
+    }
+    .status-bar.inactive {
+      background: #f5f5f5;
+      color: #757575;
+    }
+    .status-bar.inactive .status-dot {
+      background: #bdbdbd;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .tab-list-header {
+      display: flex;
+      padding: 8px 4px;
+      font-size: 11px;
+      color: #888;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 8px;
+    }
+    .col-check { width: 32px; text-align: center; }
+    .col-title { flex: 1; }
+    .col-interval { width: 70px; text-align: center; font-size: 10px; }
+    .col-refresh { width: 50px; text-align: center; font-size: 10px; }
+    
+    .tab-interval-input {
+      width: 50px;
+      padding: 4px 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 11px;
+      text-align: center;
+    }
+    .tab-interval-input:focus {
+      outline: none;
+      border-color: #1976d2;
+    }
+    
+    .tab-list {
+      list-style: none;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .tab-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 4px;
+      border-radius: 6px;
+      cursor: grab;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    .tab-item:hover {
+      background: #f8f9fa;
+    }
+    .tab-item.dragging {
+      opacity: 0.5;
+      background: #e3f2fd;
+    }
+    .tab-item.drag-over {
+      border-top: 2px solid #1976d2;
+    }
+    .tab-item.selected {
+      background: #f3f8ff;
+      border-color: #e3f2fd;
+    }
+    .tab-item .check { width: 32px; text-align: center; }
+    .tab-item .title {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+    .tab-item .title img {
+      width: 16px;
+      height: 16px;
+      border-radius: 2px;
+    }
+    .tab-item .title span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+    .tab-item .refresh { width: 60px; text-align: center; }
+    
+    .empty-state {
+      text-align: center;
+      padding: 20px;
+      color: #aaa;
+      font-size: 12px;
+    }
+    
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .btn svg {
+      width: 14px;
+      height: 14px;
+    }
+    .btn-small {
+      padding: 6px 10px;
+      font-size: 11px;
+      background: #f0f0f0;
+      color: #555;
+    }
+    .btn-small:hover {
+      background: #e0e0e0;
+    }
+    .btn-primary {
+      background: #1976d2;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #1565c0;
+    }
+    .btn-primary svg { fill: white; }
+    
+    .preset-input-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .preset-input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .preset-input:focus {
+      outline: none;
+      border-color: #1976d2;
+    }
+    .preset-list {
+      list-style: none;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .preset-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      margin-bottom: 6px;
+    }
+    .preset-item:last-child {
+      margin-bottom: 0;
+    }
+    .preset-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+    }
+    .preset-info {
+      font-size: 11px;
+      color: #888;
+    }
+    .preset-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .preset-actions button {
+      padding: 4px 10px;
+      border: none;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-load {
+      background: #1976d2;
+      color: white;
+    }
+    .btn-load:hover {
+      background: #1565c0;
+    }
+    .btn-delete {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .btn-delete:hover {
+      background: #ffcdd2;
+    }
+    
+    .footer {
+      padding: 12px 16px;
+      text-align: center;
+      font-size: 10px;
+      color: #aaa;
+      border-top: 1px solid #eee;
+    }
+    
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: #1976d2;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    
+    <div class="header-title">
+      <div class="header-icon">
+        <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+      </div>
+      Tab Auto Switch
+    </div>
+  </div>
+  
+  <div class="content">
+    <div class="card">
+      <div class="toggle-card">
+        <div class="toggle-info">
+          <div class="card-icon green">
+            <svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+          </div>
+          <div>
+            <div class="card-title">Enable Auto Switch</div>
+            <div class="card-subtitle">Cycle through selected tabs</div>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="enableToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="statusBar" class="status-bar inactive">
+        <span class="status-dot"></span>
+        <span id="statusText">Disabled</span>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon orange">
+          <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+        </div>
+        <div>
+          <div class="card-title">Default Interval</div>
+          <div class="card-subtitle">Default for new tabs (override per tab below)</div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Default</span>
+        <input type="number" id="interval" class="settings-input" min="6" value="6">
+        <span class="settings-unit">seconds</span>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon blue">
+          <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>
+        </div>
+        <div>
+          <div class="card-title">Tab List</div>
+          <div class="card-subtitle">Drag to reorder, check to include</div>
+        </div>
+        <div class="card-header-right">
+          <button id="refreshList" class="btn btn-small">Refresh</button>
+        </div>
+      </div>
+      <div class="tab-list-header">
+        <span class="col-check"></span>
+        <span class="col-title">Tab</span>
+        <span class="col-interval">Interval(s)</span>
+        <span class="col-refresh">Refresh</span>
+      </div>
+      <ul id="tabList" class="tab-list"></ul>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon purple">
+          <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+        </div>
+        <div>
+          <div class="card-title">Presets</div>
+          <div class="card-subtitle">Save and load configurations</div>
+        </div>
+      </div>
+      <div class="preset-input-row">
+        <input type="text" id="presetName" class="preset-input" placeholder="Enter preset name...">
+        <button id="savePreset" class="btn btn-primary">Save</button>
+      </div>
+      <ul id="presetList" class="preset-list"></ul>
+    </div>
+  </div>
+  
+  <div class="footer">
+    Tab Auto Switch v<span id="appVersion"></span>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
