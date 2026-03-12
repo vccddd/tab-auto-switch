@@ -179,6 +179,12 @@ function bindEvents() {
   });
   
   document.getElementById('savePreset').addEventListener('click', savePreset);
+  document.getElementById('importPreset').addEventListener('click', () => {
+    const input = document.getElementById('presetImportFile');
+    input.value = '';
+    input.click();
+  });
+  document.getElementById('presetImportFile').addEventListener('change', handleImportPresetFile);
 }
 
 async function saveState() {
@@ -273,6 +279,194 @@ function updateStatus(running, paused) {
   }
 }
 
+function sanitizeFileName(name) {
+  const sanitized = name.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
+  return sanitized || 'preset';
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function downloadJsonFile(fileName, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function extractPresetFromPayload(payload) {
+  if (payload && typeof payload === 'object' && payload.preset && typeof payload.preset === 'object') {
+    return payload.preset;
+  }
+  return payload;
+}
+
+function normalizeImportedPreset(rawPreset) {
+  if (!rawPreset || typeof rawPreset !== 'object') {
+    throw new Error('Invalid preset file format');
+  }
+
+  const name = typeof rawPreset.name === 'string' ? rawPreset.name.trim() : '';
+  if (!name) {
+    throw new Error('Preset name is required');
+  }
+
+  const defaultInterval = Math.max(parseInt(rawPreset.interval, 10) || 6, 6);
+  const rawTabs = Array.isArray(rawPreset.tabs) ? rawPreset.tabs : [];
+
+  const tabs = rawTabs
+    .map(tab => {
+      if (!tab || typeof tab.url !== 'string' || !tab.url.trim()) {
+        return null;
+      }
+      return {
+        url: tab.url,
+        title: typeof tab.title === 'string' && tab.title.trim() ? tab.title : tab.url,
+        refreshAfterSwitch: Boolean(tab.refreshAfterSwitch),
+        interval: Math.max(parseInt(tab.interval, 10) || defaultInterval, 6)
+      };
+    })
+    .filter(Boolean);
+
+  if (tabs.length === 0) {
+    throw new Error('Preset must contain at least one valid tab');
+  }
+
+  return {
+    name,
+    interval: defaultInterval,
+    tabs,
+    createdAt: Date.now()
+  };
+}
+
+function getSuggestedImportedName(baseName, presets) {
+  let counter = 1;
+  let candidate = `${baseName} (Imported)`;
+  while (presets.some(preset => preset.name === candidate)) {
+    counter += 1;
+    candidate = `${baseName} (Imported ${counter})`;
+  }
+  return candidate;
+}
+
+function resolvePresetNameConflict(baseName, presets) {
+  let suggestedName = getSuggestedImportedName(baseName, presets);
+
+  while (true) {
+    const enteredName = prompt(
+      `Preset "${baseName}" already exists. Enter a new name for the imported preset:`,
+      suggestedName
+    );
+
+    if (enteredName === null) {
+      return null;
+    }
+
+    const name = enteredName.trim();
+    if (!name) {
+      alert('Preset name cannot be empty');
+      continue;
+    }
+
+    if (presets.some(preset => preset.name === name)) {
+      alert(`Preset "${name}" already exists`);
+      suggestedName = getSuggestedImportedName(name, presets);
+      continue;
+    }
+
+    return name;
+  }
+}
+
+async function exportPreset(index) {
+  const result = await chrome.storage.local.get(['presets']);
+  const presets = result.presets || [];
+  const preset = presets[index];
+
+  if (!preset) {
+    alert('Preset not found');
+    return;
+  }
+
+  const exportPayload = {
+    format: 'tab-auto-switch-preset',
+    version: 1,
+    exportedAt: Date.now(),
+    preset
+  };
+
+  const fileName = `${sanitizeFileName(preset.name)}.tab-auto-switch.json`;
+  downloadJsonFile(fileName, exportPayload);
+}
+
+async function importPresetFile(file) {
+  const text = await file.text();
+  let parsed;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error('Invalid JSON file');
+  }
+
+  const presetToImport = normalizeImportedPreset(extractPresetFromPayload(parsed));
+  const result = await chrome.storage.local.get(['presets']);
+  const presets = result.presets || [];
+  const existingIndex = presets.findIndex(preset => preset.name === presetToImport.name);
+  let finalName = presetToImport.name;
+
+  if (existingIndex >= 0) {
+    const shouldOverwrite = confirm(
+      `Preset "${presetToImport.name}" already exists.\nPress OK to overwrite, or Cancel to import with a new name.`
+    );
+
+    if (shouldOverwrite) {
+      presets[existingIndex] = { ...presetToImport };
+    } else {
+      const renamed = resolvePresetNameConflict(presetToImport.name, presets);
+      if (!renamed) {
+        throw new Error('Import cancelled');
+      }
+      finalName = renamed;
+      presets.push({ ...presetToImport, name: finalName });
+    }
+  } else {
+    presets.push(presetToImport);
+  }
+
+  await chrome.storage.local.set({ presets });
+  return finalName;
+}
+
+async function handleImportPresetFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  try {
+    const importedName = await importPresetFile(file);
+    await loadPresets();
+    alert(`Preset "${importedName}" imported successfully`);
+  } catch (error) {
+    if (error && error.message !== 'Import cancelled') {
+      alert(error.message || 'Failed to import preset');
+    }
+  } finally {
+    event.target.value = '';
+  }
+}
+
 async function savePreset() {
   const name = document.getElementById('presetName').value.trim();
   if (!name) {
@@ -321,11 +515,12 @@ async function loadPresets() {
   list.innerHTML = presets.map((preset, index) => `
     <li class="preset-item">
       <div>
-        <div class="preset-name">${preset.name}</div>
+        <div class="preset-name">${escapeHtml(preset.name)}</div>
         <div class="preset-info">${preset.tabs.length} tabs / ${preset.interval}s interval</div>
       </div>
       <div class="preset-actions">
         <button class="btn-load" data-index="${index}">Load</button>
+        <button class="btn-export" data-index="${index}">Export</button>
         <button class="btn-delete" data-index="${index}">Delete</button>
       </div>
     </li>
@@ -337,6 +532,10 @@ async function loadPresets() {
   
   list.querySelectorAll('.btn-delete').forEach(btn => {
     btn.addEventListener('click', () => deletePreset(parseInt(btn.dataset.index)));
+  });
+
+  list.querySelectorAll('.btn-export').forEach(btn => {
+    btn.addEventListener('click', () => exportPreset(parseInt(btn.dataset.index)));
   });
 }
 
@@ -350,6 +549,17 @@ async function loadPreset(index) {
   document.getElementById('enableToggle').checked = false;
   
   document.getElementById('interval').value = preset.interval;
+  await chrome.storage.local.set({
+    switchState: {
+      interval: preset.interval,
+      selectedTabs: preset.tabs.map(tab => ({
+        url: tab.url,
+        title: tab.title,
+        refreshAfterSwitch: tab.refreshAfterSwitch,
+        interval: tab.interval || preset.interval
+      }))
+    }
+  });
   
   const newTabIds = [];
   const refreshSettings = {};
