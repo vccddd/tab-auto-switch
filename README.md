@@ -9,6 +9,7 @@ A Chrome extension that automatically cycles through a set of selected tabs at c
 - Optional page refresh after each tab switch
 - Pause/resume cycling without losing your configuration
 - Save and load tab presets for quick setup
+- Export a single preset to JSON and import presets from JSON files
 - Drag-and-drop reordering of tabs in the cycle
 - Displays version number in the popup
 
