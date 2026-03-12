@@ -362,6 +362,21 @@
       outline: none;
       border-color: #1976d2;
     }
+    .preset-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .preset-meta-text {
+      flex: 1;
+      font-size: 11px;
+      color: #555;
+      line-height: 1.4;
+    }
+    .preset-meta-text.empty {
+      color: #888;
+    }
     .preset-list {
       list-style: none;
       max-height: 120px;
@@ -383,6 +398,17 @@
       font-size: 13px;
       font-weight: 500;
       color: #333;
+    }
+    .preset-current-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #e3f2fd;
+      color: #1565c0;
+      font-size: 10px;
+      font-weight: 600;
+      vertical-align: middle;
     }
     .preset-info {
       font-size: 11px;
@@ -431,6 +457,11 @@
 
     .visually-hidden {
       display: none;
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
     }
     
     .footer {
@@ -538,6 +569,10 @@
       <div class="preset-input-row">
         <input type="text" id="presetName" class="preset-input" placeholder="Enter preset name...">
         <button id="savePreset" class="btn btn-primary">Save</button>
+      </div>
+      <div class="preset-meta-row">
+        <div id="currentPresetLabel" class="preset-meta-text empty">No preset linked. Changes stay local unless you save a new preset or update a loaded one.</div>
+        <button id="overwritePreset" class="btn btn-small" disabled>Update Current</button>
       </div>
       <input type="file" id="presetImportFile" class="visually-hidden" accept="application/json,.json">
       <ul id="presetList" class="preset-list"></ul>

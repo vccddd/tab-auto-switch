@@ -2,6 +2,156 @@ document.addEventListener('DOMContentLoaded', init);
 
 let allTabs = [];
 let isRunning = false;
+let currentPresetId = null;
+let currentPresetName = '';
+
+function generatePresetId() {
+  return `preset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getDefaultIntervalValue() {
+  let defaultInterval = parseInt(document.getElementById('interval').value, 10) || 6;
+  if (defaultInterval < 6) {
+    defaultInterval = 6;
+    document.getElementById('interval').value = 6;
+  }
+  return defaultInterval;
+}
+
+function buildSelectedTabsState(selectedTabs, defaultInterval) {
+  return selectedTabs.map(tab => ({
+    id: tab.id,
+    url: tab.url,
+    title: tab.title,
+    refreshAfterSwitch: Boolean(tab.refreshAfterSwitch),
+    interval: tab.interval || defaultInterval
+  }));
+}
+
+async function persistSwitchState(selectedTabsOverride) {
+  const defaultInterval = getDefaultIntervalValue();
+  const selectedTabs = selectedTabsOverride || buildSelectedTabsState(allTabs.filter(tab => tab.selected), defaultInterval);
+
+  await chrome.storage.local.set({
+    switchState: {
+      interval: defaultInterval,
+      selectedTabs,
+      currentPresetId,
+      currentPresetName
+    }
+  });
+
+  return { defaultInterval, selectedTabs };
+}
+
+function normalizePreset(rawPreset) {
+  if (!rawPreset || typeof rawPreset !== 'object') {
+    return null;
+  }
+
+  const name = typeof rawPreset.name === 'string' ? rawPreset.name.trim() : '';
+  if (!name) {
+    return null;
+  }
+
+  const interval = Math.max(parseInt(rawPreset.interval, 10) || 6, 6);
+  const rawTabs = Array.isArray(rawPreset.tabs) ? rawPreset.tabs : [];
+  const tabs = rawTabs
+    .map(tab => {
+      if (!tab || typeof tab.url !== 'string' || !tab.url.trim()) {
+        return null;
+      }
+
+      return {
+        url: tab.url,
+        title: typeof tab.title === 'string' && tab.title.trim() ? tab.title : tab.url,
+        refreshAfterSwitch: Boolean(tab.refreshAfterSwitch),
+        interval: Math.max(parseInt(tab.interval, 10) || interval, 6)
+      };
+    })
+    .filter(Boolean);
+
+  if (tabs.length === 0) {
+    return null;
+  }
+
+  return {
+    id: typeof rawPreset.id === 'string' && rawPreset.id.trim() ? rawPreset.id : generatePresetId(),
+    name,
+    interval,
+    tabs,
+    createdAt: Number.isFinite(rawPreset.createdAt) ? rawPreset.createdAt : Date.now()
+  };
+}
+
+async function getStoredPresets() {
+  const result = await chrome.storage.local.get(['presets']);
+  const rawPresets = Array.isArray(result.presets) ? result.presets : [];
+  const presets = [];
+  const usedIds = new Set();
+  let needsPersist = false;
+
+  rawPresets.forEach(rawPreset => {
+    const normalizedPreset = normalizePreset(rawPreset);
+    if (!normalizedPreset) {
+      needsPersist = true;
+      return;
+    }
+
+    if (usedIds.has(normalizedPreset.id)) {
+      normalizedPreset.id = generatePresetId();
+      needsPersist = true;
+    }
+
+    if (!rawPreset.id || rawPreset.id !== normalizedPreset.id) {
+      needsPersist = true;
+    }
+
+    usedIds.add(normalizedPreset.id);
+    presets.push(normalizedPreset);
+  });
+
+  if (needsPersist) {
+    await chrome.storage.local.set({ presets });
+  }
+
+  return presets;
+}
+
+function updateCurrentPresetUI() {
+  const label = document.getElementById('currentPresetLabel');
+  const overwriteButton = document.getElementById('overwritePreset');
+
+  if (!label || !overwriteButton) {
+    return;
+  }
+
+  if (currentPresetId && currentPresetName) {
+    label.textContent = `Linked preset: ${currentPresetName}. Changes stay local until you click Update Current.`;
+    label.classList.remove('empty');
+    overwriteButton.disabled = false;
+    return;
+  }
+
+  label.textContent = 'No preset linked. Changes stay local unless you save a new preset or update a loaded one.';
+  label.classList.add('empty');
+  overwriteButton.disabled = true;
+}
+
+function createPresetFromSelection(name, selectedTabs, defaultInterval, existingPreset = {}) {
+  return {
+    id: existingPreset.id || generatePresetId(),
+    name,
+    interval: defaultInterval,
+    tabs: selectedTabs.map(tab => ({
+      url: tab.url,
+      title: tab.title,
+      refreshAfterSwitch: tab.refreshAfterSwitch,
+      interval: tab.interval || defaultInterval
+    })),
+    createdAt: existingPreset.createdAt || Date.now()
+  };
+}
 
 // popup 中的用户活动也通知 background
 function notifyUserActivity() {
@@ -38,22 +188,53 @@ async function loadTabs() {
 }
 
 async function loadState() {
-  const result = await chrome.storage.local.get(['switchState']);
+  const result = await chrome.storage.local.get(['switchState', 'backgroundState']);
   const state = result.switchState || {};
+  const backgroundState = result.backgroundState || {};
+  const runningTabIds = Array.isArray(backgroundState.tabIds) ? backgroundState.tabIds : [];
+  currentPresetId = typeof state.currentPresetId === 'string' && state.currentPresetId ? state.currentPresetId : null;
+  currentPresetName = typeof state.currentPresetName === 'string' ? state.currentPresetName : '';
   
   document.getElementById('interval').value = Math.max(state.interval || 6, 6);
   
   if (state.selectedTabs) {
+    const matchedTabIds = new Set();
+    let migratedIds = false;
+
     state.selectedTabs.forEach(savedTab => {
-      const tab = allTabs.find(t => t.url === savedTab.url);
+      const expectedTabId = savedTab.id || runningTabIds.find(tabId => !matchedTabIds.has(tabId));
+      const tab = allTabs.find(t => {
+        if (matchedTabIds.has(t.id)) {
+          return false;
+        }
+
+        if (expectedTabId && t.id === expectedTabId) {
+          return true;
+        }
+
+        return t.url === savedTab.url;
+      });
+
       if (tab) {
+        if (!savedTab.id && expectedTabId === tab.id) {
+          savedTab.id = tab.id;
+          migratedIds = true;
+        }
+
+        matchedTabIds.add(tab.id);
         tab.selected = true;
         tab.refreshAfterSwitch = savedTab.refreshAfterSwitch || false;
         tab.interval = savedTab.interval || (state.interval || 6);
       }
     });
     renderTabList();
+
+    if (migratedIds) {
+      await persistSwitchState();
+    }
   }
+
+  updateCurrentPresetUI();
   
   const response = await chrome.runtime.sendMessage({ action: 'getStatus' });
   if (response) {
@@ -179,6 +360,7 @@ function bindEvents() {
   });
   
   document.getElementById('savePreset').addEventListener('click', savePreset);
+  document.getElementById('overwritePreset').addEventListener('click', overwriteCurrentPreset);
   document.getElementById('importPreset').addEventListener('click', () => {
     const input = document.getElementById('presetImportFile');
     input.value = '';
@@ -188,24 +370,7 @@ function bindEvents() {
 }
 
 async function saveState() {
-  const selectedTabs = allTabs.filter(t => t.selected);
-  let defaultInterval = parseInt(document.getElementById('interval').value) || 6;
-  if (defaultInterval < 6) {
-    defaultInterval = 6;
-    document.getElementById('interval').value = 6;
-  }
-  
-  const state = {
-    interval: defaultInterval,
-    selectedTabs: selectedTabs.map(t => ({
-      url: t.url,
-      title: t.title,
-      refreshAfterSwitch: t.refreshAfterSwitch,
-      interval: t.interval || defaultInterval
-    }))
-  };
-  
-  await chrome.storage.local.set({ switchState: state });
+  const { defaultInterval, selectedTabs } = await persistSwitchState();
   
   if (isRunning) {
     const tabIds = selectedTabs.map(t => t.id);
@@ -344,6 +509,7 @@ function normalizeImportedPreset(rawPreset) {
   }
 
   return {
+    id: generatePresetId(),
     name,
     interval: defaultInterval,
     tabs,
@@ -391,8 +557,7 @@ function resolvePresetNameConflict(baseName, presets) {
 }
 
 async function exportPreset(index) {
-  const result = await chrome.storage.local.get(['presets']);
-  const presets = result.presets || [];
+  const presets = await getStoredPresets();
   const preset = presets[index];
 
   if (!preset) {
@@ -422,8 +587,7 @@ async function importPresetFile(file) {
   }
 
   const presetToImport = normalizeImportedPreset(extractPresetFromPayload(parsed));
-  const result = await chrome.storage.local.get(['presets']);
-  const presets = result.presets || [];
+  const presets = await getStoredPresets();
   const existingIndex = presets.findIndex(preset => preset.name === presetToImport.name);
   let finalName = presetToImport.name;
 
@@ -433,7 +597,12 @@ async function importPresetFile(file) {
     );
 
     if (shouldOverwrite) {
-      presets[existingIndex] = { ...presetToImport };
+      presets[existingIndex] = {
+        ...presetToImport,
+        id: presets[existingIndex].id,
+        name: presets[existingIndex].name,
+        createdAt: presets[existingIndex].createdAt
+      };
     } else {
       const renamed = resolvePresetNameConflict(presetToImport.name, presets);
       if (!renamed) {
@@ -480,32 +649,86 @@ async function savePreset() {
     return;
   }
   
-  const defaultInterval = Math.max(parseInt(document.getElementById('interval').value) || 6, 6);
-  const preset = {
-    name,
-    interval: defaultInterval,
-    tabs: selectedTabs.map(t => ({
-      url: t.url,
-      title: t.title,
-      refreshAfterSwitch: t.refreshAfterSwitch,
-      interval: t.interval || defaultInterval
-    })),
-    createdAt: Date.now()
-  };
-  
-  const result = await chrome.storage.local.get(['presets']);
-  const presets = result.presets || [];
-  presets.push(preset);
+  const defaultInterval = getDefaultIntervalValue();
+  const presets = await getStoredPresets();
+  const existingIndex = presets.findIndex(preset => preset.name === name);
+  const existingPreset = existingIndex >= 0 ? presets[existingIndex] : null;
+
+  if (existingPreset) {
+    const shouldOverwrite = confirm(`Preset "${name}" already exists. Press OK to overwrite it.`);
+    if (!shouldOverwrite) {
+      return;
+    }
+  }
+
+  const preset = createPresetFromSelection(name, selectedTabs, defaultInterval, existingPreset || undefined);
+  if (existingIndex >= 0) {
+    presets[existingIndex] = preset;
+  } else {
+    presets.push(preset);
+  }
+
   await chrome.storage.local.set({ presets });
+  currentPresetId = preset.id;
+  currentPresetName = preset.name;
+  await persistSwitchState();
+  updateCurrentPresetUI();
   
   document.getElementById('presetName').value = '';
   loadPresets();
 }
 
+async function overwriteCurrentPreset() {
+  if (!currentPresetId) {
+    alert('No linked preset to update');
+    return;
+  }
+
+  const selectedTabs = allTabs.filter(tab => tab.selected);
+  if (selectedTabs.length === 0) {
+    alert('Please select at least one tab');
+    return;
+  }
+
+  const presets = await getStoredPresets();
+  const presetIndex = presets.findIndex(preset => preset.id === currentPresetId);
+  if (presetIndex < 0) {
+    currentPresetId = null;
+    currentPresetName = '';
+    await persistSwitchState();
+    updateCurrentPresetUI();
+    alert('The linked preset no longer exists');
+    await loadPresets();
+    return;
+  }
+
+  const defaultInterval = getDefaultIntervalValue();
+  presets[presetIndex] = createPresetFromSelection(
+    presets[presetIndex].name,
+    selectedTabs,
+    defaultInterval,
+    presets[presetIndex]
+  );
+
+  await chrome.storage.local.set({ presets });
+  currentPresetName = presets[presetIndex].name;
+  await persistSwitchState();
+  updateCurrentPresetUI();
+  await loadPresets();
+  alert(`Preset "${currentPresetName}" updated`);
+}
+
 async function loadPresets() {
-  const result = await chrome.storage.local.get(['presets']);
-  const presets = result.presets || [];
+  const presets = await getStoredPresets();
   const list = document.getElementById('presetList');
+
+  if (currentPresetId && !presets.some(preset => preset.id === currentPresetId)) {
+    currentPresetId = null;
+    currentPresetName = '';
+    await persistSwitchState();
+  }
+
+  updateCurrentPresetUI();
   
   if (presets.length === 0) {
     list.innerHTML = '<li class="empty-state">No presets saved</li>';
@@ -515,7 +738,7 @@ async function loadPresets() {
   list.innerHTML = presets.map((preset, index) => `
     <li class="preset-item">
       <div>
-        <div class="preset-name">${escapeHtml(preset.name)}</div>
+        <div class="preset-name">${escapeHtml(preset.name)}${preset.id === currentPresetId ? ' <span class="preset-current-badge">Current</span>' : ''}</div>
         <div class="preset-info">${preset.tabs.length} tabs / ${preset.interval}s interval</div>
       </div>
       <div class="preset-actions">
@@ -540,8 +763,7 @@ async function loadPresets() {
 }
 
 async function loadPreset(index) {
-  const result = await chrome.storage.local.get(['presets']);
-  const presets = result.presets || [];
+  const presets = await getStoredPresets();
   const preset = presets[index];
   if (!preset) return;
   
@@ -549,17 +771,9 @@ async function loadPreset(index) {
   document.getElementById('enableToggle').checked = false;
   
   document.getElementById('interval').value = preset.interval;
-  await chrome.storage.local.set({
-    switchState: {
-      interval: preset.interval,
-      selectedTabs: preset.tabs.map(tab => ({
-        url: tab.url,
-        title: tab.title,
-        refreshAfterSwitch: tab.refreshAfterSwitch,
-        interval: tab.interval || preset.interval
-      }))
-    }
-  });
+  currentPresetId = preset.id;
+  currentPresetName = preset.name;
+  updateCurrentPresetUI();
   
   const newTabIds = [];
   const refreshSettings = {};
@@ -587,6 +801,16 @@ async function loadPreset(index) {
     refreshSettings[tab.id] = tabInfo.refreshAfterSwitch;
     intervalSettings[tab.id] = tabInfo.interval || preset.interval;
   }
+
+  const selectedTabs = preset.tabs.map((tabInfo, tabIndex) => ({
+    id: newTabIds[tabIndex],
+    url: tabInfo.url,
+    title: tabInfo.title,
+    refreshAfterSwitch: tabInfo.refreshAfterSwitch,
+    interval: tabInfo.interval || preset.interval
+  }));
+
+  await persistSwitchState(selectedTabs);
   
   await new Promise(resolve => setTimeout(resolve, 1000));
   
@@ -605,9 +829,17 @@ async function loadPreset(index) {
 async function deletePreset(index) {
   if (!confirm('Delete this preset?')) return;
   
-  const result = await chrome.storage.local.get(['presets']);
-  const presets = result.presets || [];
+  const presets = await getStoredPresets();
+  const preset = presets[index];
   presets.splice(index, 1);
   await chrome.storage.local.set({ presets });
+
+  if (preset && preset.id === currentPresetId) {
+    currentPresetId = null;
+    currentPresetName = '';
+    await persistSwitchState();
+    updateCurrentPresetUI();
+  }
+
   loadPresets();
 }

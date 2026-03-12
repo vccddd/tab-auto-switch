@@ -9,6 +9,8 @@ A Chrome extension that automatically cycles through a set of selected tabs at c
 - Optional page refresh after each tab switch
 - Pause/resume cycling without losing your configuration
 - Save and load tab presets for quick setup
+- Keep tab selections stable even when a selected tab navigates to a new URL
+- Load a preset, make local changes, and manually overwrite the linked preset when you want to save them
 - Export a single preset to JSON and import presets from JSON files
 - Drag-and-drop reordering of tabs in the cycle
 - Displays version number in the popup
@@ -26,7 +28,7 @@ A Chrome extension that automatically cycles through a set of selected tabs at c
 2. Check the tabs you want to include in the rotation
 3. Set the switch interval (in seconds) for each tab or use the global default
 4. Toggle the switch to start auto-cycling
-5. Use the pause button to temporarily suspend cycling without disabling it
+5. If you load a preset, later changes stay local until you click Update Current or save a new preset
 
 ## Permissions
 
