@@ -34,7 +34,7 @@ A Chrome extension that automatically cycles through a set of selected tabs at c
 |------------|---------|
 | `tabs` | Query open tabs and switch between them |
 | `storage` | Save user configuration (selected tabs, intervals, presets) |
-| `scripting` | Inject content scripts to detect user activity |
+| `scripting` | Inject content scripts into already-open tabs so activity detection works immediately |
 | `alarms` | Reliable timer for tab-switching intervals (required for MV3 Service Workers) |
 | `<all_urls>` | Run content scripts on all pages to detect user activity |
 
